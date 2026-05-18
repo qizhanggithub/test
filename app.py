@@ -213,137 +213,139 @@ Vn = Vc + Vs
 V_factored = phi_v * Vn
 
 # =========================================================
-# RESULTS
+# PAGE LAYOUT
 # =========================================================
 
-st.header("Results")
+main_col, result_col = st.columns([3, 1])
 
-col3, col4 = st.columns(2)
+with result_col:
 
-with col3:
+    st.header("Results")
 
-    st.metric("As (in²)", f"{As:.3f}")
-    st.metric("Effective depth d (in)", f"{d:.3f}")
-    st.metric("Reinforcement ratio ρ", f"{rho:.5f}")
-    st.metric("β1", f"{beta_1:.3f}")
-    st.metric("Compression block depth a (in)", f"{a:.3f}")
-    st.metric("Neutral axis depth c (in)", f"{c:.3f}")
+    res_col1, res_col2 = st.columns(2)
 
-with col4:
+    with res_col1:
 
-    st.metric("Tensile strain εt", f"{epsilon_t:.5f}")
-    st.metric("Flexural reduction factor ϕb", f"{phi_b:.3f}")
-    st.metric("Factored Moment Capacity ϕMn (kip-ft)", f"{Mn:.2f}")
-    st.metric("Concrete Shear Capacity Vc (kips)", f"{Vc:.2f}")
-    st.metric("Steel Shear Capacity Vs (kips)", f"{Vs:.2f}")
-    st.metric("Factored Shear Capacity ϕVn (kips)", f"{V_factored:.2f}")
+        st.metric("As (in²)", f"{As:.3f}")
+        st.metric("Effective depth d (in)", f"{d:.3f}")
+        st.metric("Reinforcement ratio ρ", f"{rho:.5f}")
+        st.metric("β1", f"{beta_1:.3f}")
+        st.metric("Compression block depth a (in)", f"{a:.3f}")
+        st.metric("Neutral axis depth c (in)", f"{c:.3f}")
 
-# =========================================================
-# DETAILED CALCULATIONS
-# =========================================================
+    with res_col2:
 
-st.header("Detailed Calculations")
+        st.metric("Tensile strain εt", f"{epsilon_t:.5f}")
+        st.metric("Flexural reduction factor ϕb", f"{phi_b:.3f}")
+        st.metric("Factored Moment Capacity ϕMn (kip-ft)", f"{Mn:.2f}")
+        st.metric("Concrete Shear Capacity Vc (kips)", f"{Vc:.2f}")
+        st.metric("Steel Shear Capacity Vs (kips)", f"{Vs:.2f}")
+        st.metric("Factored Shear Capacity ϕVn (kips)", f"{V_factored:.2f}")
 
-# =========================================================
-# FLEXURAL CALCULATIONS
-# =========================================================
+with main_col:
 
-st.subheader("Flexural Design")
+    st.header("Detailed Calculations")
 
-st.latex(rf"""
+    # =========================================================
+    # FLEXURAL CALCULATIONS
+    # =========================================================
+
+    st.subheader("Flexural Design")
+
+    st.latex(rf"""
 A_g = b h = ({b})({h}) = {Ag:.2f}\ in^2
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 d = h - cover - \frac{{d_bt}}{{8}} - \frac{{d_bl}}{{16}}
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 d = {h} - {cover} - \frac{{{db_t}}}{{8}} - \frac{{{db_l}}}{{16}}
 = {d:.3f}\ in
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 A_s = ({As_bar:.2f})({n_tensionbar}) = {As:.3f}\ in^2
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \rho = \frac{{A_s}}{{bd}}
 = \frac{{{As:.3f}}}{{({b})({d:.3f})}}
 = {rho:.5f}
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 a = \frac{{f_y A_s}}{{\alpha_1 f'_c b}}
 = \frac{{({f_yl})({As:.3f})}}{{({alpha_1})({f_prime_c})({b})}}
 = {a:.3f}\ in
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 c = \frac{{a}}{{\beta_1}}
 = \frac{{{a:.3f}}}{{{beta_1:.3f}}}
 = {c:.3f}\ in
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \epsilon_t = \epsilon_{{cmax}}\left(\frac{{d-c}}{{c}}\right)
 = ({epsilon_cmax})\left(\frac{{{d:.3f}-{c:.3f}}}{{{c:.3f}}}\right)
 = {epsilon_t:.5f}
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \phi M_n = \phi_b A_s f_y \left(d - \frac{{a}}{{2}}\right)
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \phi M_n = ({phi_b:.3f})({As:.3f})({f_yl})
 \left({d:.3f} - \frac{{{a:.3f}}}{{2}}\right)
 \times \frac{{1}}{{12}} \times \frac{{1}}{{1000}}
 = {Mn:.2f}\ kip-ft
 """)
 
-# =========================================================
-# SHEAR CALCULATIONS
-# =========================================================
+    # =========================================================
+    # SHEAR CALCULATIONS
+    # =========================================================
 
-st.subheader("Shear Design")
+    st.subheader("Shear Design")
 
-st.latex(rf"""
+    st.latex(rf"""
 d_{{shear}} = \max(d,0.8h)
 = \max({d:.3f},0.8({h}))
 = {d_shear:.3f}\ in
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \rho_w = \frac{{A_s}}{{bd}}
 = \frac{{{As:.3f}}}{{({b})({d_shear:.3f})}}
 = {rho_w:.5f}
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \lambda_s = \min\left(\sqrt{{\frac{{2}}{{1+d/10}}}},1\right)
 = {lambda_s:.3f}
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 A_v = ({Av_bar:.2f})({n_leg})
 = {Av:.3f}\ in^2
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 V_s = \frac{{A_v f_{{yt}} d}}{{s}}
 = \frac{{({Av:.3f})({f_yt})({d_shear:.3f})}}{{{s}}}
 \times \frac{{1}}{{1000}}
 = {Vs:.2f}\ kips
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 V_n = V_c + V_s
 = {Vc:.2f} + {Vs:.2f}
 = {Vn:.2f}\ kips
 """)
 
-st.latex(rf"""
+    st.latex(rf"""
 \phi V_n = ({phi_v})({Vn:.2f})
 = {V_factored:.2f}\ kips
 """)
