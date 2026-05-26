@@ -584,4 +584,4 @@ if run_analysis:
         st.error(f"Error: {e}")
     
     if os.path.exists(output_file):
-    os.remove(output_file)
+        os.remove(output_file)
