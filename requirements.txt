@@ -1,6 +1,6 @@
 streamlit
-pandas
 numpy
-handcalcs
-latexify-py
-sympy
+matplotlib
+pandas
+openseespy
+opsvis

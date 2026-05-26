@@ -1,351 +1,587 @@
+# Streamlit App - Moment Curvature Analysis using OpenSeesPy
+
 import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
-from math import sqrt
+import os
+
+import openseespy.opensees as ops
+import opsvis as opsv
 
 # =========================================================
 # PAGE CONFIG
 # =========================================================
 
 st.set_page_config(
-    page_title="RC Beam Calculator",
+    page_title="Rectangular Section Moment Curvature Analysis",
     layout="wide"
 )
 
-st.title("Reinforced Concrete Beam Calculator")
-st.caption("ACI 318-19 Rectangular RC Beam Design")
+st.title("Rectangular Section Moment Curvature Analysis")
+st.write("Moment-curvature analysis using OpenSeesPy")
 
 # =========================================================
-# INPUTS
+# SIDEBAR INPUTS
 # =========================================================
 
-st.header("Inputs")
+st.sidebar.header("Section Geometry")
 
-col1, col2 = st.columns(2)
-
-with col1:
-
-    f_prime_c = st.number_input(
-        "Concrete strength f'c (psi)",
-        value=4000.0
-    )
-
-    f_yl = st.number_input(
-        "Steel yield strength fy (psi)",
-        value=40000.0
-    )
-
-    b = st.number_input(
-        "Beam width b (in)",
-        value=12.0
-    )
-
-    h = st.number_input(
-        "Beam depth h (in)",
-        value=19.0
-    )
-
-    cover = st.number_input(
-        "Concrete cover (in)",
-        value=2.0
-    )
-
-with col2:
-
-    db_l = st.selectbox(
-        "Longitudinal bar size",
-        [4, 5, 6, 7, 8, 9, 10, 11],
-        index=4
-    )
-
-    db_t = st.selectbox(
-        "Stirrup bar size",
-        [4, 5, 6, 7, 8, 9, 10, 11],
-        index=0
-    )
-
-    n_tensionbar = st.number_input(
-        "Number of tension bars",
-        value=7,
-        step=1
-    )
-
-    n_leg = st.number_input(
-        "Number of stirrup legs",
-        value=2,
-        step=1
-    )
-
-    s = st.number_input(
-        "Stirrup spacing s (in)",
-        value=6.0
-    )
-
-# =========================================================
-# CONSTANTS
-# =========================================================
-
-epsilon_cmax = 0.003
-epsilon_y = 0.002
-alpha_1 = 0.85
-phi_v = 0.75
-f_yt = 40000.0
-Nu = 0.0
-
-# =========================================================
-# REBAR DATABASE
-# =========================================================
-
-USrebar = pd.DataFrame({
-    'size #': [4, 5, 6, 7, 8, 9, 10, 11],
-    'area': [0.20, 0.31, 0.44, 0.60, 0.79, 1.00, 1.27, 1.56]
-})
-
-As_bar = float(
-    USrebar.loc[
-        USrebar['size #'] == db_l,
-        'area'
-    ].iloc[0]
+colWidth = st.sidebar.number_input(
+    "Section Width (m)",
+    value=1.6,
+    step=0.1,
+    format="%.3f"
 )
 
-Av_bar = float(
-    USrebar.loc[
-        USrebar['size #'] == db_t,
-        'area'
-    ].iloc[0]
+colDepth = st.sidebar.number_input(
+    "Section Depth (m) - Parallel to load direction",
+    value=1.4,
+    step=0.1,
+    format="%.3f"
 )
 
-As = As_bar * n_tensionbar
-
-Av = Av_bar * n_leg
-
-# =========================================================
-# SECTION PROPERTIES
-# =========================================================
-
-Ag = b * h
-
-d = h - cover - db_t / 8 - db_l / 16
-
-rho = As / (b * d)
-
-# =========================================================
-# BETA 1
-# =========================================================
-
-if f_prime_c < 4000:
-    beta_1 = 0.85
-
-elif f_prime_c < 8000:
-    beta_1 = 0.85 - 0.05 * (f_prime_c - 4000) / 1000
-
-else:
-    beta_1 = 0.65
-
-# =========================================================
-# FLEXURAL ANALYSIS
-# =========================================================
-
-a = (f_yl * As) / (alpha_1 * f_prime_c * b)
-
-c = a / beta_1
-
-epsilon_t = epsilon_cmax * (d - c) / c
-
-if epsilon_t > (epsilon_y + 0.003):
-
-    phi_b = 0.90
-
-elif epsilon_t > epsilon_y:
-
-    phi_b = 0.65 + 0.25 * (epsilon_t - epsilon_y) / 0.003
-
-else:
-
-    phi_b = 0.65
-
-Mn = phi_b * As * f_yl * (d - a / 2) / 12 / 1000
-
-# =========================================================
-# SHEAR ANALYSIS
-# =========================================================
-
-d_shear = max(d, 0.8 * h)
-
-rho_w = As / (b * d_shear)
-
-lambda_s = min(sqrt(2 / (1 + d_shear / 10)), 1)
-
-Av_min = max(
-    0.75 * sqrt(f_prime_c) * b * s / f_yt,
-    50 * b * s / f_yt
+cover = st.sidebar.number_input(
+    "Concrete Clear Cover (m)",
+    value=0.04,
+    step=0.005,
+    format="%.3f"
 )
 
-Vc_a = ((2 * sqrt(f_prime_c) + Nu / 6 / Ag) * b * d_shear) / 1000
 
-Vc_b = (
-    (
-        8 * rho_w ** (1 / 3) * sqrt(f_prime_c)
-        + Nu / 6 / Ag
-    )
-    * b
-    * d_shear
-) / 1000
 
-if Av > Av_min:
+# =========================================================
+# STEEL
+# =========================================================
 
-    Vc = max(Vc_a, Vc_b) / 1000
+st.sidebar.header("Rebar")
 
-else:
+fy = st.sidebar.number_input(
+    "Steel Yield Strength fy (kPa)",
+    value=400 * 1e3 * 1.1,
+    step=1000.0,
+    format="%.1f"
+)
 
-    Vc = (
-        (
-            8 * lambda_s * rho_w ** (1 / 3) * sqrt(f_prime_c)
-            + Nu / 6 / Ag
+E = st.sidebar.number_input(
+    "Steel Elastic Modulus E (kPa)",
+    value=200 * 1e6,
+    step=1e6,
+    format="%.1f"
+)
+
+number_of_top_bars = st.sidebar.number_input(
+    "Number of Top Bars",
+    value=9,
+    step=1
+)
+
+number_of_bot_bars = st.sidebar.number_input(
+    "Number of Bottom Bars",
+    value=9,
+    step=1
+)
+
+bar_sizes = {
+    "10M": 100e-6,
+    "15M": 200e-6,
+    "20M": 300e-6,
+    "25M": 500e-6,
+    "30M": 700e-6,
+    "35M": 1000e-6,
+    "45M": 1500e-6,
+    "55M": 2500e-6
+}
+
+# top bars
+top_bar_size = st.sidebar.selectbox(
+    "Top Bar Size",
+    options=list(bar_sizes.keys()),
+    index=5   # default = 35M
+)
+
+# bottom bars
+bot_bar_size = st.sidebar.selectbox(
+    "Bottom Bar Size",
+    options=list(bar_sizes.keys()),
+    index=5   # default = 35M
+)
+
+# individual bar areas
+As_top = bar_sizes[top_bar_size]
+As_bot = bar_sizes[bot_bar_size]
+
+# total reinforcement areas
+Astotal_top = As_top * number_of_top_bars
+Astotal_bot = As_bot * number_of_bot_bars
+
+
+# =========================================================
+# CONFINED CONCRETE
+# =========================================================
+
+st.sidebar.header("Confined Concrete Core")
+
+fpc_confined = st.sidebar.number_input(
+    "Confined concrete compressive strength at 28 days (kPa)",
+    value=-35 * 1e3 * 1.25,
+    step=1000.0,
+    format="%.1f"
+)
+
+epsc0_confined = st.sidebar.number_input(
+    "Confined concrete strain at maximum strength",
+    value=-0.002,
+    format="%.5f"
+)
+
+fpcu_confined = st.sidebar.number_input(
+    "Confined concrete crushing strength, (kPa)",
+    value=0.0,
+    format="%.1f"
+)
+
+epsU_confined = st.sidebar.number_input(
+    "Confined concrete strain at crushing strength",
+    value=-0.006,
+    format="%.5f"
+)
+
+# =========================================================
+# UNCONFINED CONCRETE
+# =========================================================
+
+st.sidebar.header("Unconfined Concrete Cover")
+
+fpc = st.sidebar.number_input(
+    "Compressive strength at 28 days (kPa)",
+    value=-35 * 1e3 * 1.25,
+    step=1000.0,
+    format="%.1f"
+)
+
+epsc0 = st.sidebar.number_input(
+    "Strain at maximum strength",
+    value=-0.002,
+    format="%.5f"
+)
+
+fpcu = st.sidebar.number_input(
+    "Crushing strength, (kPa)",
+    value=0.0,
+    format="%.1f"
+)
+
+epsU = st.sidebar.number_input(
+    "Strain at crushing strength",
+    value=-0.006,
+    format="%.5f"
+)
+
+# =========================================================
+# ANALYSIS PARAMETERS
+# =========================================================
+
+st.sidebar.header("Axial Load and Analysis Parameters")
+
+axial_load_ratio = st.sidebar.number_input(
+    "Axial Load Ratio",
+    value=0.04,
+    step=0.01,
+    format="%.2f"
+)
+
+mu = st.sidebar.number_input(
+    "Target Curvature Ductility",
+    value=80,
+    step=2
+)
+
+numIncr = st.sidebar.number_input(
+    "Number of Increments",
+    value=2000,
+    step=100
+)
+
+# =========================================================
+# COMPUTED AXIAL LOAD
+# =========================================================
+
+P = fpc * colWidth * colDepth * axial_load_ratio
+
+st.sidebar.markdown("---")
+st.sidebar.write("### Axial Load (kN)")
+st.sidebar.write(f"P = {P:,.2f}")
+
+# =========================================================
+# RUN BUTTON
+# =========================================================
+
+run_analysis = st.button("Run Analysis")
+
+# =========================================================
+# MAIN ANALYSIS
+# =========================================================
+
+if run_analysis:
+
+    try:
+
+        # -------------------------------------------------
+        # CLEAR MODEL
+        # -------------------------------------------------
+
+        ops.wipe()
+
+        # -------------------------------------------------
+        # MODEL
+        # -------------------------------------------------
+
+        ops.model('basic', '-ndm', 2, '-ndf', 3)
+
+        # -------------------------------------------------
+        # MATERIALS
+        # -------------------------------------------------
+
+        ops.uniaxialMaterial(
+            'Concrete01',
+            1,
+            fpc_confined,
+            epsc0_confined,
+            fpcu_confined,
+            epsU_confined
         )
-        * b
-        * d_shear
-    ) / 1000
 
-Vs = (Av * f_yt * d_shear) / s / 1000
+        ops.uniaxialMaterial(
+            'Concrete01',
+            2,
+            fpc,
+            epsc0,
+            fpcu,
+            epsU
+        )
 
-Vn = Vc + Vs
+        ops.uniaxialMaterial(
+            'Steel01',
+            3,
+            fy,
+            E,
+            0.001
+        )
 
-V_factored = phi_v * Vn
+        # -------------------------------------------------
+        # SECTION GEOMETRY
+        # -------------------------------------------------
 
-# =========================================================
-# PAGE LAYOUT
-# =========================================================
+        y1 = colDepth / 2
+        z1 = colWidth / 2
 
-main_col, result_col = st.columns([3, 1])
+        fib_sec_1 = [
 
-with result_col:
+            ['section', 'Fiber', 1, '-GJ', 1.0e6],
 
-    st.header("Results")
+            ['patch', 'rect',
+             1,
+             30,
+             30,
+             cover - y1,
+             cover - z1,
+             y1 - cover,
+             z1 - cover],
 
-    res_col1, res_col2 = st.columns(2)
+            ['patch', 'rect',
+             2,
+             30,
+             2,
+             -y1,
+             z1 - cover,
+             y1,
+             z1],
 
-    with res_col1:
+            ['patch', 'rect',
+             2,
+             30,
+             2,
+             -y1,
+             -z1,
+             y1,
+             cover - z1],
 
-        st.metric("As (in²)", f"{As:.3f}")
-        st.metric("Effective depth d (in)", f"{d:.3f}")
-        st.metric("Reinforcement ratio ρ", f"{rho:.5f}")
-        st.metric("β1", f"{beta_1:.3f}")
-        st.metric("Compression block depth a (in)", f"{a:.3f}")
-        st.metric("Neutral axis depth c (in)", f"{c:.3f}")
+            ['patch', 'rect',
+             2,
+             2,
+             30,
+             -y1,
+             cover - z1,
+             cover - y1,
+             z1 - cover],
 
-    with res_col2:
+            ['patch', 'rect',
+             2,
+             2,
+             30,
+             y1 - cover,
+             cover - z1,
+             y1,
+             z1 - cover],
 
-        st.metric("Tensile strain εt", f"{epsilon_t:.5f}")
-        st.metric("Flexural reduction factor ϕb", f"{phi_b:.3f}")
-        st.metric("Factored Moment Capacity ϕMn (kip-ft)", f"{Mn:.2f}")
-        st.metric("Concrete Shear Capacity Vc (kips)", f"{Vc:.2f}")
-        st.metric("Steel Shear Capacity Vs (kips)", f"{Vs:.2f}")
-        st.metric("Factored Shear Capacity ϕVn (kips)", f"{V_factored:.2f}")
+            ['layer', 'straight',
+             3,
+             number_of_top_bars,
+             As_top,
+             y1 - cover,
+             z1 - cover,
+             y1 - cover,
+             cover - z1],
 
-with main_col:
+            ['layer', 'straight',
+             3,
+             number_of_bot_bars,
+             As_bot,
+             cover - y1,
+             z1 - cover,
+             cover - y1,
+             cover - z1]
 
-    st.header("Detailed Calculations")
+        ]
 
-    # =========================================================
-    # FLEXURAL CALCULATIONS
-    # =========================================================
+        opsv.fib_sec_list_to_cmds(fib_sec_1)
 
-    st.subheader("Flexural Design")
+        # -------------------------------------------------
+        # FIBER SECTION PLOT
+        # -------------------------------------------------
+        # -------------------------------------------------
+        # FIBER SECTION PLOT
+        # -------------------------------------------------
 
-    st.latex(rf"""
-A_g = b h = ({b})({h}) = {Ag:.2f}\ in^2
-""")
+        st.subheader("Fiber Section")
 
-    st.latex(rf"""
-d = h - cover - \frac{{d_bt}}{{8}} - \frac{{d_bl}}{{16}}
-""")
+        # create a new matplotlib figure
+        plt.figure(figsize=(6, 6))
 
-    st.latex(rf"""
-d = {h} - {cover} - \frac{{{db_t}}}{{8}} - \frac{{{db_l}}}{{16}}
-= {d:.3f}\ in
-""")
+        matcolor = ['r', 'lightgrey', 'gold', 'w', 'w', 'w']
 
-    st.latex(rf"""
-A_s = ({As_bar:.2f})({n_tensionbar}) = {As:.3f}\ in^2
-""")
+        # plot section
+        opsv.plot_fiber_section(
+            fib_sec_1,
+            matcolor=matcolor
+        )
 
-    st.latex(rf"""
-\rho = \frac{{A_s}}{{bd}}
-= \frac{{{As:.3f}}}{{({b})({d:.3f})}}
-= {rho:.5f}
-""")
+        plt.axis('equal')
 
-    st.latex(rf"""
-a = \frac{{f_y A_s}}{{\alpha_1 f'_c b}}
-= \frac{{({f_yl})({As:.3f})}}{{({alpha_1})({f_prime_c})({b})}}
-= {a:.3f}\ in
-""")
+        # get current figure
+        fig1 = plt.gcf()
 
-    st.latex(rf"""
-c = \frac{{a}}{{\beta_1}}
-= \frac{{{a:.3f}}}{{{beta_1:.3f}}}
-= {c:.3f}\ in
-""")
+        # display in streamlit
+        st.pyplot(fig1)
 
-    st.latex(rf"""
-\epsilon_t = \epsilon_{{cmax}}\left(\frac{{d-c}}{{c}}\right)
-= ({epsilon_cmax})\left(\frac{{{d:.3f}-{c:.3f}}}{{{c:.3f}}}\right)
-= {epsilon_t:.5f}
-""")
+        # close figure to avoid duplication
+        plt.close(fig1)
 
-    st.latex(rf"""
-\phi M_n = \phi_b A_s f_y \left(d - \frac{{a}}{{2}}\right)
-""")
 
-    st.latex(rf"""
-\phi M_n = ({phi_b:.3f})({As:.3f})({f_yl})
-\left({d:.3f} - \frac{{{a:.3f}}}{{2}}\right)
-\times \frac{{1}}{{12}} \times \frac{{1}}{{1000}}
-= {Mn:.2f}\ kip-ft
-""")
 
-    # =========================================================
-    # SHEAR CALCULATIONS
-    # =========================================================
+        # -------------------------------------------------
+        # ESTIMATE YIELD CURVATURE
+        # -------------------------------------------------
 
-    st.subheader("Shear Design")
+        d = colDepth - cover
 
-    st.latex(rf"""
-d_{{shear}} = \max(d,0.8h)
-= \max({d:.3f},0.8({h}))
-= {d_shear:.3f}\ in
-""")
+        epsy = fy / E
 
-    st.latex(rf"""
-\rho_w = \frac{{A_s}}{{bd}}
-= \frac{{{As:.3f}}}{{({b})({d_shear:.3f})}}
-= {rho_w:.5f}
-""")
+        Ky = epsy / (0.7 * d * 39)
 
-    st.latex(rf"""
-\lambda_s = \min\left(\sqrt{{\frac{{2}}{{1+d/10}}}},1\right)
-= {lambda_s:.3f}
-""")
+        # -------------------------------------------------
+        # NODES
+        # -------------------------------------------------
 
-    st.latex(rf"""
-A_v = ({Av_bar:.2f})({n_leg})
-= {Av:.3f}\ in^2
-""")
+        ops.node(1, 0, 0)
+        ops.node(2, 0, 0)
 
-    st.latex(rf"""
-V_s = \frac{{A_v f_{{yt}} d}}{{s}}
-= \frac{{({Av:.3f})({f_yt})({d_shear:.3f})}}{{{s}}}
-\times \frac{{1}}{{1000}}
-= {Vs:.2f}\ kips
-""")
+        ops.fix(1, 1, 1, 1)
+        ops.fix(2, 0, 1, 0)
 
-    st.latex(rf"""
-V_n = V_c + V_s
-= {Vc:.2f} + {Vs:.2f}
-= {Vn:.2f}\ kips
-""")
+        # -------------------------------------------------
+        # ELEMENT
+        # -------------------------------------------------
 
-    st.latex(rf"""
-\phi V_n = ({phi_v})({Vn:.2f})
-= {V_factored:.2f}\ kips
-""")
+        ops.element(
+            'zeroLengthSection',
+            1,
+            1,
+            2,
+            1
+        )
+
+        # -------------------------------------------------
+        # APPLY AXIAL LOAD
+        # -------------------------------------------------
+
+        ops.timeSeries('Constant', 1)
+
+        ops.pattern('Plain', 1, 1)
+
+        ops.load(2, P, 0, 0)
+
+        # -------------------------------------------------
+        # ANALYSIS SETUP
+        # -------------------------------------------------
+
+        ops.integrator('LoadControl', 0)
+
+        ops.system('SparseGeneral', '-piv')
+
+        ops.test('NormUnbalance', 1e-9, 50)
+
+        ops.numberer('Plain')
+
+        ops.constraints('Plain')
+
+        ops.algorithm('Newton')
+
+        ops.analysis('Static')
+
+        ops.analyze(1)
+
+        # -------------------------------------------------
+        # MOMENT CURVATURE ANALYSIS
+        # -------------------------------------------------
+
+        ops.timeSeries('Linear', 2)
+
+        ops.pattern('Plain', 2, 2)
+
+        ops.load(2, 0, 0, 1)
+
+        maxK = Ky * mu
+
+        dK = maxK / numIncr
+
+        ops.integrator(
+            'DisplacementControl',
+            2,
+            3,
+            dK,
+            1,
+            dK,
+            dK
+        )
+
+        # -------------------------------------------------
+        # RECORDER FILE
+        # -------------------------------------------------
+
+        import uuid
+
+        output_file = f"moment_curvature_{uuid.uuid4().hex}.txt"
+        # delete previous file if exists
+        if os.path.exists(output_file):
+            try:
+                os.remove(output_file)
+            except:
+                pass
+
+        ops.recorder(
+            'Node',
+            '-file',
+            output_file,
+            '-time',
+            '-node',
+            2,
+            '-dof',
+            3,
+            'disp'
+        )
+
+        # -------------------------------------------------
+        # RUN ANALYSIS
+        # -------------------------------------------------
+
+        ok = ops.analyze(numIncr)
+
+        # Important: release OpenSees file lock
+        ops.wipe()
+
+        if ok != 0:
+
+            st.error("Analysis failed to converge.")
+
+        else:
+
+            # -------------------------------------------------
+            # LOAD RESULTS
+            # -------------------------------------------------
+
+            data = np.loadtxt(output_file)
+
+            moment = data[:, 0]
+            curvature = data[:, 1]
+
+            max_moment = np.max(moment)
+
+            # -------------------------------------------------
+            # RESULTS SUMMARY
+            # -------------------------------------------------
+
+            st.subheader("Results")
+
+            c1, c2, c3 = st.columns(3)
+
+            c1.metric(
+                "Maximum Moment",
+                f"{max_moment:,.2f}"
+            )
+
+            c2.metric(
+                "Yield Curvature",
+                f"{Ky:.6e}"
+            )
+
+            c3.metric(
+                "Maximum Curvature",
+                f"{maxK:.6e}"
+            )
+
+            # -------------------------------------------------
+            # MOMENT-CURVATURE PLOT
+            # -------------------------------------------------
+
+            st.subheader("Moment-Curvature Plot")
+
+            fig2, ax2 = plt.subplots(figsize=(10, 6))
+
+            ax2.plot(
+                curvature,
+                moment,
+                linewidth=2
+            )
+
+            ax2.set_xlabel("Curvature (1/m)")
+            ax2.set_ylabel("Moment")
+
+            ax2.set_title(
+                "Moment-Curvature Relationship"
+            )
+
+            ax2.grid(True)
+
+            st.pyplot(fig2)
+
+            # -------------------------------------------------
+            # DATA TABLE
+            # -------------------------------------------------
+
+            st.subheader("Moment-Curvature Data")
+
+            df = pd.DataFrame({
+                "Curvature": curvature,
+                "Moment": moment
+            })
+
+            st.dataframe(df)
+
+    except Exception as e:
+
+        st.error(f"Error: {e}")
+    
+    if os.path.exists(output_file):
+    os.remove(output_file)
